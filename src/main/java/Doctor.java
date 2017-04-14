@@ -20,13 +20,22 @@ public class Doctor {
         Channel channel = connection.createChannel();
 
         // exchange
-        String EXCHANGE_NAME = "hospital1";
-        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
-        channel.queueDeclare("ankle", false, false, false, null);
-        channel.queueDeclare("knee", false, false, false, null);
-        channel.queueDeclare("elbow", false, false, false, null);
-        channel.queueDeclare("examination", false, false, false, null);
+        String EXCHANGE_NAME = "hospital";
+        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
+
+        channel.queueBind("ankle", EXCHANGE_NAME, "ankle.admin");
+        channel.queueBind("knee", EXCHANGE_NAME, "knee.admin");
+        channel.queueBind("elbow", EXCHANGE_NAME, "elbow.admin");
+        channel.queueBind("examination", EXCHANGE_NAME, "examination.admin");
+        channel.queueBind("admin", EXCHANGE_NAME, "*.admin");
         channel.basicQos(1);
+
+        Channel adminChannel = connection.createChannel();
+        String ADMINISTRATION_EXCHANGE_NAME = "administration";
+        adminChannel.exchangeDeclare(ADMINISTRATION_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
+        adminChannel.basicQos(1);
+        String adminQueue = adminChannel.queueDeclare().getQueue();
+        adminChannel.queueBind(adminQueue, ADMINISTRATION_EXCHANGE_NAME, "");
 
         Consumer consumer = new DefaultConsumer(channel) {
             @Override
@@ -37,10 +46,18 @@ public class Doctor {
                 System.out.println("#####################");
             }
         };
+        Consumer adminConsumer = new DefaultConsumer(channel){
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received: " + message);
+            }
+        };
 
         // start listening
         System.out.println("Waiting for messages...");
         channel.basicConsume("examination", true, consumer);
+        adminChannel.basicConsume(adminQueue,true, adminConsumer);
 
 
         while (true) {
@@ -55,8 +72,8 @@ public class Doctor {
                 break;
             }
             // publish
-            channel.basicPublish(EXCHANGE_NAME, typeOfExamination, null, patientName.getBytes("UTF-8"));
-            System.out.println("Sent: " + typeOfExamination + " and " + patientName);
+            channel.basicPublish(EXCHANGE_NAME, typeOfExamination+".admin", null, patientName.getBytes("UTF-8"));
+            System.out.println("Sent: " + typeOfExamination + " and " + patientName + " and" + typeOfExamination+".admin" );
         }
     }
 }

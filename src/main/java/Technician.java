@@ -34,17 +34,28 @@ public class Technician {
         final Channel channel = connection.createChannel();
 
         // exchange
-        final String EXCHANGE_NAME = "hospital1";
-        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.DIRECT);
+        final String EXCHANGE_NAME = "hospital";
+        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
 
         channel.basicQos(1,false);
 
         // queue & bind
         String queueName = channel.queueDeclare().getQueue();
-        channel.queueBind(specialization1, EXCHANGE_NAME, specialization1);
-        channel.queueBind(specialization2, EXCHANGE_NAME, specialization2);
-        channel.queueBind("examination", EXCHANGE_NAME, "examination");
+        channel.queueBind(specialization1, EXCHANGE_NAME, specialization1+".admin");
+        channel.queueBind(specialization2, EXCHANGE_NAME, specialization2+".admin");
+        channel.queueBind("examination", EXCHANGE_NAME, "examination.admin");
+        channel.queueBind("admin", EXCHANGE_NAME, "examination.admin");
+        channel.queueBind(channel.queueDeclare().getQueue(), EXCHANGE_NAME, "admin.tech");
         System.out.println("created queue: " + queueName);
+
+
+        Channel adminChannel = connection.createChannel();
+        String ADMINISTRATION_EXCHANGE_NAME = "administration";
+        adminChannel.exchangeDeclare(ADMINISTRATION_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
+        adminChannel.basicQos(1);
+        String adminQueue = adminChannel.queueDeclare().getQueue();
+        adminChannel.queueBind(adminQueue, ADMINISTRATION_EXCHANGE_NAME, "");
+
 
         final Random generator = new Random();
 
@@ -59,9 +70,17 @@ public class Technician {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                channel.basicPublish(EXCHANGE_NAME, "examination", null, (message + " badanie").getBytes("UTF-8"));
+                channel.basicPublish(EXCHANGE_NAME, "examination.admin", null, (message + " badanie").getBytes("UTF-8"));
                 channel.basicAck(envelope.getDeliveryTag(),false);
 
+            }
+        };
+
+        Consumer adminConsumer = new DefaultConsumer(channel){
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received: " + message);
             }
         };
 
@@ -69,5 +88,6 @@ public class Technician {
         System.out.println("Waiting for messages...");
         channel.basicConsume(specialization1, false, consumer);
         channel.basicConsume(specialization2, false, consumer);
+        adminChannel.basicConsume(adminQueue, true, adminConsumer);
     }
 }
